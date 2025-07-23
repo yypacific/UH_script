@@ -1,0 +1,87 @@
+#Nima Rafati 20170511 (nimarafati@gmail.com)
+#fastQC
+fastqc --extract --contaminants /proj/b2015317/private/nobackup/UserDirectories/nima/from_glob/Contamination/adapters-tab-txt.list -o Sample_HF1  -t 2 /proj/b2017146/INBOX/Sample_HF1//HF1_1.fq.gz /proj/b2017146/INBOX/Sample_HF1//HF1_2.fq.gz
+bwa mem -M -t 16 -R '@RG\tID:Sample_HF1\tSM:Sample_HF1' /proj/b2017146/private/nobackup/Reference-5/galgal5.fa /proj/b2017146/INBOX/Sample_HF1//HF1_1.fq.gz /proj/b2017146/INBOX/Sample_HF1//HF1_2.fq.gz  >file.sam
+#Convert sam to bam
+#Sorting bam files
+#MarkDuplicate
+java -jar /sw/apps/bioinfo/picard/1.92/milou/MarkDuplicates.jar INPUT=aligned.sort.bam OUTPUT=aligned.sort.MarkDup.bam ASSUME_SORTED=true VALIDATION_STRINGENCY=SILENT METRICS_FILE=aligned.sort.MarkDup PROGRAM_RECORD_ID=null
+#Index bam file
+samtools index aligned.sort.MarkDup.bam aligned.sort.MarkDup.bai
+#IndelRealign
+#1
+java -jar /sw/apps/bioinfo/GATK/3.5.0//GenomeAnalysisTK.jar -T RealignerTargetCreator -R /proj/b2017146/private/nobackup/Reference-5/galgal5.fa -I aligned.sort.MarkDup.bam -o aligned.sort.MarkDup.IndelRealign.intervals
+#2
+java -jar /sw/apps/bioinfo/GATK/3.5.0//GenomeAnalysisTK.jar -T IndelRealigner -R /proj/b2017146/private/nobackup/Reference-5/galgal5.fa -I aligned.sort.MarkDup.bam -targetIntervals aligned.sort.MarkDup.IndelRealign.intervals -o aligned.sort.MarkDup.IndelR.bam
+#Index bam file
+samtools index aligned.sort.MarkDup.IndelR.bam aligned.sort.MarkDup.IndelR.bai
+
+#Generating gvcf files:
+java -jar /sw/apps/bioinfo/GATK/3.5.0/GenomeAnalysisTK.jar -T HaplotypeCaller -R /proj/b2017146/private/nobackup/Reference-5/galgal5.fa -nct 16 -variant_index_type LINEAR -variant_index_parameter 128000 --emitRefConfidence GVCF -mbq 20 -minPruning 5 -I aligned.sort.MarkDup.IndelR.bam -o aligned.sort.MarkDup.IndelR.gvcf
+
+#Genotype gvcf files:
+java -jar /sw/apps/bioinfo/GATK/3.5.0/GenomeAnalysisTK.jar -T GenotypeGVCFs -R /proj/b2017146/private/nobackup/Reference-5/galgal5.fa -I aligned.sort.MarkDup.IndelR.gvcf -o aligned.sort.MarkDup.IndelR.vcf -nct 16
+
+#Extract SNP and INDELs in separate files
+java -jar /sw/apps/bioinfo/GATK/3.5.0//GenomeAnalysisTK.jar -T SelectVariants -R /proj/b2017146/private/nobackup/Reference-5/galgal5.fa --variant aligned.sort.MarkDup.IndelR.vcf -selectType SNP -restrictAllelesTo BIALLELIC -o aligned.sort.MarkDup.IndelR_SNP.vcf &
+
+java -jar /sw/apps/bioinfo/GATK/3.5.0//GenomeAnalysisTK.jar -T SelectVariants -R /proj/b2017146/private/nobackup/Reference-5/galgal5.fa --variant aligned.sort.MarkDup.IndelR.vcf -selectType INDEL -o aligned.sort.MarkDup.IndelR_INDEL.vcf
+
+
+#BaseQRanksum
+This variant-level annotation compares the base qualities of the data supporting the reference allele with those supporting any alternate allele.
+The ideal result is a value close to zero, which indicates there is little to no difference. A negative value indicates that the bases supporting the alternate allele have lower quality scores than those supporting the reference allele. Conversely, a positive value indicates that the bases supporting the alternate allele have higher quality scores than those supporting the reference allele. Finding a statistically significant difference either way suggests that the sequencing process may have been biased or affected by an artifact.
+#QD
+The QD is the QUAL score normalized by allele depth (AD) for a variant. For a single sample, the HaplotypeCaller calculates the QD by taking QUAL/AD. For multiple samples, HaplotypeCaller and GenotypeGVCFs calculate the QD by taking QUAL/AD of samples with a non hom-ref genotype call. The reason we leave out the samples with a hom-ref call is to not penalize the QUAL for the other samples with the variant call.
+#FS (StrandOddsRatio)
+The FisherStrand annotation is one of several methods that aims to evaluate whether there is strand bias in the data. It uses Fisher's Exact Test to determine if there is strand bias between forward and reverse strands for the reference or alternate allele.
+The output is a Phred-scaled p-value. The higher the output value, the more likely there is to be bias. More bias is indicative of false positive calls.
+#ReadPosRanksum
+This variant-level annotation tests whether there is evidence of bias in the position of alleles within the reads that support them, between the reference and alternate alleles.
+Seeing an allele only near the ends of reads is indicative of error, because that is where sequencers tend to make the most errors. However, some variants located near the edges of sequenced regions will necessarily be covered by the ends of reads, so we can't just set an absolute "minimum distance from end of read" threshold. That is why we use a rank sum test to evaluate whether there is a difference in how well the reference allele and the alternate allele are supported.
+The ideal result is a value close to zero, which indicates there is little to no difference in where the alleles are found relative to the ends of reads. A negative value indicates that the alternate allele is found at the ends of reads more often than the reference allele. Conversely, a positive value indicates that the reference allele is found at the ends of reads more often than the alternate allele.
+#ClippingRankSum
+This variant-level annotation tests whether the data supporting the reference allele shows more or less base clipping (hard clips) than those supporting the alternate allele. The ideal result is a value close to zero, which indicates there is little to no difference. A negative value indicates that the reads supporting the alternate allele have more hard-clipped bases than those supporting the reference allele. Conversely, a positive value indicates that the reads supporting the alternate allele have fewer hard-clipped bases than those supporting the reference allele. Finding a statistically significant difference either way suggests that the sequencing and/or mapping process may have been biased or affected by an artifact.
+
+
+#QUAL
+#QD
+#FS
+#MQ
+#MQRankSum
+#DP
+
+echo "chr7:1-36946936" >chr7.list
+#Extract quality data from vcf file by GATK:
+java -jar /sw/apps/bioinfo/GATK/3.5.0/GenomeAnalysisTK.jar -T VariantsToTable -R /proj/b2017146/private/nobackup/Reference-5/galgal5.fa -V Raw_call-SNP.vcf --allowMissingData  -F CHROM -F POS -F AC -F QUAL -F QD É. -o Raw_SNP_chr7_table.txt -L chr7.list
+
+
+
+#Extract insert size
+samtools view -f 66 *bam | auk '($9>0)' | cut -f9 >IS
+
+
+
+
+
+
+
+
+##Filter SNPs based cut-off determined by evaluating the distribution in previous step
+
+
+java -jar /sw/apps/bioinfo/GATK/3.5.0//GenomeAnalysisTK.jar -T VariantFiltration -R /proj/b2017146/private/nobackup/Reference-5/galgal5.fa --variant Raw_call-SNP.vcf \
+--filterExpression "QUAL < 100.0 " --filterName QUALfilter \
+--filterExpression " QD < 2.0" --filterName QDfilter \
+--filterExpression " FS > 30.0" --filterName FSfilter \
+--filterExpression "  MQ < 40 " --filterName MQfilter \
+--filterExpression "  BaseQRankSum < -2.0 ||  BaseQRankSum > 2.0" --filterName BaseQRankSumfilter \
+--filterExpression "  ClippingQRankSum < -2.0 ||  ClippingQRankSum > 2.0" --filterName ClipppingRankSumfilter \
+--filterExpression "  MQRankSum < -2.0 ||  MQRankSum > 2.0" --filterName MQRankSumfilter \
+--filterExpression "  ReadPosRankSum < -2.0 || ReadPosRankSum > 2.0" --filterName ReadPosRankSumfilter \
+-o SNP-FILTER.vcf
+
+#Now you only extract SNPs that have passed the filtering (PASS)
+java -jar /sw/apps/bioinfo/GATK/3.5.0//GenomeAnalysisTK.jar -T SelectVariants -R /proj/b2017146/private/nobackup/Reference-5/galgal5.fa --variant SNP-FILTER.vcf --excludeFiltered -o SNP-PASS.vcf
+
+vcftools --vcf SNP-PASS.vcf --weir-fst-pop Offense.txt --weir-fst-pop Defence.txt --fst-window-size 10000 --fst-window-step 5000 --out SNP-PASS
