@@ -6,7 +6,7 @@
 
 proj=~/UMHM_RNAseq
 
-/home/soft/cufflinks-2.2.1.Linux_x86_64/cuffdiff \
+cuffdiff \
 	-p 8 \
     -L UM,HM \
 	-o ${proj}/Comparison_UMvsHM_gal5 \
